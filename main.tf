@@ -523,6 +523,18 @@ resource "aws_s3_bucket_public_access_block" "public_buckets" {
   restrict_public_buckets = false # BAD: Doesn't restrict public buckets
 }
 
+# BAD: Enable ACLs on bucket (required to set ACLs - modern buckets have ACLs disabled by default)
+resource "aws_s3_bucket_ownership_controls" "public_buckets" {
+  count  = 10
+  bucket = aws_s3_bucket.public_buckets[count.index].id
+
+  rule {
+    object_ownership = "BucketOwnerPreferred" # BAD: Allows ACLs
+  }
+
+  depends_on = [aws_s3_bucket_public_access_block.public_buckets]
+}
+
 # BAD: Bucket policy allowing public read access
 resource "aws_s3_bucket_policy" "public_read" {
   count  = 10
@@ -564,7 +576,10 @@ resource "aws_s3_bucket_acl" "public_buckets" {
   bucket = aws_s3_bucket.public_buckets[count.index].id
   acl    = "public-read-write" # BAD: Public read and write access
 
-  depends_on = [aws_s3_bucket_public_access_block.public_buckets]
+  depends_on = [
+    aws_s3_bucket_public_access_block.public_buckets,
+    aws_s3_bucket_ownership_controls.public_buckets,
+  ]
 }
 
 # ============================================================================
