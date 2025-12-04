@@ -753,7 +753,13 @@ resource "aws_api_gateway_deployment" "insecure_api_deployment" {
   ]
 
   rest_api_id = aws_api_gateway_rest_api.insecure_api.id
-  stage_name  = "prod" # BAD: Using "prod" stage name for insecure API
+}
+
+# BAD: Using "prod" stage name for insecure API
+resource "aws_api_gateway_stage" "insecure_api_stage" {
+  deployment_id = aws_api_gateway_deployment.insecure_api_deployment.id
+  rest_api_id   = aws_api_gateway_rest_api.insecure_api.id
+  stage_name    = "prod" # BAD: Using "prod" stage name for insecure API
 }
 
 # BAD: CloudWatch Log Group with sensitive data (logs are free for first 5GB)

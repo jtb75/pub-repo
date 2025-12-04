@@ -22,13 +22,13 @@ output "ec2_instances" {
   description = "EC2 instance details (instances are stopped by default)"
   value = {
     for idx, instance in aws_instance.insecure_instances : instance.tags.Name => {
-      id                    = instance.id
-      public_ip             = instance.public_ip
-      private_ip            = instance.private_ip
-      state                 = "stopped"
+      id                      = instance.id
+      public_ip               = instance.public_ip
+      private_ip              = instance.private_ip
+      state                   = "stopped"
       contains_sensitive_data = idx < 3 ? "YES - Contains fake credit cards, SSNs, PII, and secrets" : "No"
-      has_iam_role          = idx >= 3 ? "YES - Has IAM role with S3 access to PHI buckets" : "No"
-      iam_role_name         = idx >= 3 ? aws_iam_role.phi_access_role.name : null
+      has_iam_role            = idx >= 3 ? "YES - Has IAM role with S3 access to PHI buckets" : "No"
+      iam_role_name           = idx >= 3 ? aws_iam_role.phi_access_role.name : null
     }
   }
 }
@@ -73,11 +73,11 @@ output "phi_s3_buckets" {
 output "iam_role_info" {
   description = "IAM role information for PHI bucket access"
   value = {
-    role_name    = aws_iam_role.phi_access_role.name
-    role_arn     = aws_iam_role.phi_access_role.arn
+    role_name   = aws_iam_role.phi_access_role.name
+    role_arn    = aws_iam_role.phi_access_role.arn
     attached_to = "EC2 instances 3 and 4 (indices 3 and 4)"
-    permissions  = "Full S3 access (GetObject, PutObject, DeleteObject, ListBucket) on all 5 PHI buckets"
-    warning      = "Overly permissive IAM policy - violates least privilege principle"
+    permissions = "Full S3 access (GetObject, PutObject, DeleteObject, ListBucket) on all 5 PHI buckets"
+    warning     = "Overly permissive IAM policy - violates least privilege principle"
   }
 }
 
@@ -105,10 +105,10 @@ output "lambda_function" {
 output "api_gateway" {
   description = "API Gateway with no authentication"
   value = {
-    api_id      = aws_api_gateway_rest_api.insecure_api.id
-    api_url     = "https://${aws_api_gateway_rest_api.insecure_api.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_deployment.insecure_api_deployment.stage_name}"
-    stage_name  = aws_api_gateway_deployment.insecure_api_deployment.stage_name
-    warning     = "API Gateway has NO authentication - anyone can call it!"
+    api_id     = aws_api_gateway_rest_api.insecure_api.id
+    api_url    = "https://${aws_api_gateway_rest_api.insecure_api.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_stage.insecure_api_stage.stage_name}"
+    stage_name = aws_api_gateway_stage.insecure_api_stage.stage_name
+    warning    = "API Gateway has NO authentication - anyone can call it!"
   }
 }
 
@@ -128,7 +128,7 @@ output "missing_security_features" {
     vpc_flow_logs      = "NO - VPC Flow Logs should be enabled for network monitoring"
     mfa_required       = "NO - MFA should be required for admin users"
     key_rotation       = "NO - Access keys should be rotated regularly"
-    waf_enabled       = "NO - WAF should be attached to API Gateway"
+    waf_enabled        = "NO - WAF should be attached to API Gateway"
     rate_limiting      = "NO - API Gateway should have rate limiting"
   }
 }
