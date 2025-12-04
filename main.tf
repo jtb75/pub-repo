@@ -3,11 +3,15 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0"
+      version  = "~> 5.0"
     }
     random = {
       source  = "hashicorp/random"
       version = "~> 3.0"
+    }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.0"
     }
   }
 }
@@ -554,5 +558,225 @@ resource "aws_s3_bucket_acl" "public_buckets" {
   acl    = "public-read-write" # BAD: Public read and write access
 
   depends_on = [aws_s3_bucket_public_access_block.public_buckets]
+}
+
+# ============================================================================
+# FREE TIER BAD PATTERNS - No additional cost
+# ============================================================================
+
+# BAD: IAM Users with admin access and long-lived access keys
+resource "aws_iam_user" "admin_users" {
+  count = 3
+  name  = "admin-user-${count.index + 1}-${random_string.suffix.result}"
+
+  tags = {
+    Name        = "admin-user-${count.index + 1}-${random_string.suffix.result}"
+    Environment = "insecure-demo"
+  }
+}
+
+# BAD: Attach AdministratorAccess policy directly to users
+resource "aws_iam_user_policy_attachment" "admin_access" {
+  count      = 3
+  user       = aws_iam_user.admin_users[count.index].name
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess" # BAD: Full admin access
+}
+
+# BAD: Create long-lived access keys (no rotation, no expiration)
+resource "aws_iam_access_key" "admin_keys" {
+  count = 3
+  user  = aws_iam_user.admin_users[count.index].name
+  # BAD: No key rotation policy, keys never expire
+}
+
+# BAD: No MFA required for admin users
+# (MFA is free but not enabled - demonstrating the anti-pattern)
+
+# BAD: CloudTrail not enabled or misconfigured
+# Note: CloudTrail is free for management events, but we're demonstrating NOT using it
+# We'll create a comment showing what NOT to do rather than actually disabling it
+# (since you can't "disable" CloudTrail via Terraform if it's already enabled)
+
+# BAD: VPC Flow Logs disabled (should be enabled for security monitoring)
+# VPC Flow Logs: First 10GB per month free
+# We're demonstrating NOT enabling them
+# (Cannot create a resource to "disable" something, but we document the anti-pattern)
+
+# BAD: Lambda function with secrets in environment variables and overly permissive role
+resource "aws_iam_role" "lambda_role" {
+  name = "lambda-overly-permissive-role-${random_string.suffix.result}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "lambda-overly-permissive-role-${random_string.suffix.result}"
+    Environment = "insecure-demo"
+  }
+}
+
+# BAD: Overly permissive Lambda IAM policy (allows everything)
+resource "aws_iam_role_policy" "lambda_full_access" {
+  name = "lambda-full-access-${random_string.suffix.result}"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "*" # BAD: Wildcard permission
+        Resource = "*" # BAD: All resources
+      }
+    ]
+  })
+}
+
+# Create Lambda function code
+data "archive_file" "lambda_zip" {
+  type        = "zip"
+  output_path = "${path.module}/lambda_function_${random_string.suffix.result}.zip"
+  source {
+    content = <<-PYTHON
+def handler(event, context):
+    # BAD: This function would use the environment variables with secrets
+    import os
+    db_password = os.environ.get('DATABASE_PASSWORD')
+    api_key = os.environ.get('API_KEY')
+    # In a real scenario, these would be logged or exposed
+    return {
+        'statusCode': 200,
+        'body': 'Function executed (secrets in env vars - BAD!)'
+    }
+PYTHON
+    filename = "index.py"
+  }
+}
+
+# BAD: Lambda function with secrets in plain text environment variables
+resource "aws_lambda_function" "insecure_lambda" {
+  filename      = data.archive_file.lambda_zip.output_path
+  function_name = "insecure-lambda-${random_string.suffix.result}"
+  role          = aws_iam_role.lambda_role.arn
+  handler       = "index.handler"
+  runtime       = "python3.11"
+  timeout       = 30
+  source_code_hash = data.archive_file.lambda_zip.output_base64sha256
+
+  # BAD: Secrets stored in plain text environment variables
+  environment {
+    variables = {
+      DATABASE_PASSWORD = "SuperSecretPassword123!"
+      API_KEY           = "FAKE_sk_live_FAKE_API_KEY_123456789"
+      AWS_ACCESS_KEY    = "AKIAIOSFODNN7EXAMPLE"
+      AWS_SECRET_KEY    = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+      JWT_SECRET        = "FAKE_JWT_SECRET_KEY_DO_NOT_USE"
+      STRIPE_KEY        = "FAKE_sk_test_FAKE_STRIPE_KEY"
+    }
+  }
+
+  # BAD: No VPC configuration (runs in public subnet by default)
+  # BAD: No dead letter queue configured
+  # BAD: No reserved concurrent executions limit
+
+  tags = {
+    Name        = "insecure-lambda-${random_string.suffix.result}"
+    Environment = "insecure-demo"
+  }
+}
+
+# BAD: API Gateway with no authentication
+resource "aws_api_gateway_rest_api" "insecure_api" {
+  name        = "insecure-api-${random_string.suffix.result}"
+  description = "API Gateway with no authentication - DO NOT USE IN PRODUCTION"
+
+  endpoint_configuration {
+    types = ["REGIONAL"]
+  }
+
+  tags = {
+    Name        = "insecure-api-${random_string.suffix.result}"
+    Environment = "insecure-demo"
+  }
+}
+
+resource "aws_api_gateway_resource" "insecure_api_resource" {
+  rest_api_id = aws_api_gateway_rest_api.insecure_api.id
+  parent_id   = aws_api_gateway_rest_api.insecure_api.root_resource_id
+  path_part   = "data"
+}
+
+resource "aws_api_gateway_method" "insecure_api_method" {
+  rest_api_id   = aws_api_gateway_rest_api.insecure_api.id
+  resource_id   = aws_api_gateway_resource.insecure_api_resource.id
+  http_method   = "GET"
+  authorization = "NONE" # BAD: No authentication required
+  api_key_required = false # BAD: No API key required
+}
+
+resource "aws_api_gateway_integration" "insecure_api_integration" {
+  rest_api_id = aws_api_gateway_rest_api.insecure_api.id
+  resource_id = aws_api_gateway_resource.insecure_api_resource.id
+  http_method = aws_api_gateway_method.insecure_api_method.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.insecure_lambda.invoke_arn
+}
+
+# BAD: No WAF attached to API Gateway
+# BAD: No rate limiting configured
+# BAD: No CORS restrictions
+# BAD: No request validation
+
+resource "aws_api_gateway_deployment" "insecure_api_deployment" {
+  depends_on = [
+    aws_api_gateway_method.insecure_api_method,
+    aws_api_gateway_integration.insecure_api_integration,
+  ]
+
+  rest_api_id = aws_api_gateway_rest_api.insecure_api.id
+  stage_name  = "prod" # BAD: Using "prod" stage name for insecure API
+}
+
+# BAD: CloudWatch Log Group with sensitive data (logs are free for first 5GB)
+resource "aws_cloudwatch_log_group" "insecure_logs" {
+  name              = "/aws/lambda/insecure-lambda-${random_string.suffix.result}"
+  retention_in_days = 0 # BAD: Logs never expire (costs money, but also security risk)
+
+  tags = {
+    Name        = "insecure-lambda-logs-${random_string.suffix.result}"
+    Environment = "insecure-demo"
+  }
+}
+
+# BAD: CloudWatch Log Group for API Gateway (no encryption, no retention)
+resource "aws_cloudwatch_log_group" "api_gateway_logs" {
+  name              = "/aws/apigateway/insecure-api-${random_string.suffix.result}"
+  retention_in_days = 0 # BAD: Logs never expire
+
+  tags = {
+    Name        = "insecure-api-logs-${random_string.suffix.result}"
+    Environment = "insecure-demo"
+  }
+}
+
+# BAD: Lambda permission allows API Gateway to invoke (but also allows anyone with API endpoint)
+resource "aws_lambda_permission" "api_gateway_invoke" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.insecure_lambda.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.insecure_api.execution_arn}/*/*"
 }
 

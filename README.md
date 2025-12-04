@@ -69,7 +69,49 @@ This repository serves as an educational example of **what NOT to do** when depl
 - **No condition keys**: IAM policies don't restrict access by IP, time, or other conditions
 - **No MFA requirements**: No multi-factor authentication required for sensitive operations
 
-### 5. General Security Issues
+### 5. IAM User Security Issues (FREE TIER)
+
+- **IAM users with admin access**: 3 IAM users have AdministratorAccess policy attached
+- **Long-lived access keys**: Access keys created with no rotation policy or expiration
+- **No MFA required**: Multi-factor authentication not enabled for admin users
+- **No key rotation**: Access keys never rotated (security best practice violation)
+- **Keys stored insecurely**: Access keys could be exposed if instances are compromised
+
+### 6. Lambda Function Security Issues (FREE TIER - 1M requests/month free)
+
+- **Secrets in environment variables**: Database passwords, API keys stored in plain text Lambda environment variables
+- **Overly permissive IAM role**: Lambda role has wildcard permissions (`*:*` on all resources)
+- **No VPC configuration**: Lambda runs in default (public) network without VPC isolation
+- **No dead letter queue**: Failed invocations not captured for analysis
+- **No reserved concurrency**: No limits on concurrent executions
+- **Secrets in logs**: Environment variables may be logged to CloudWatch Logs
+
+### 7. API Gateway Security Issues (FREE TIER - 1M requests/month free)
+
+- **No authentication**: API Gateway endpoint has `authorization = "NONE"`
+- **No API key required**: `api_key_required = false` allows anonymous access
+- **No WAF attached**: Web Application Firewall not configured to block malicious requests
+- **No rate limiting**: No throttling configured to prevent abuse
+- **No CORS restrictions**: Cross-origin requests not restricted
+- **No request validation**: Input validation not configured
+- **Public endpoint**: API is publicly accessible to anyone on the internet
+
+### 8. CloudWatch Logs Security Issues (FREE TIER - 5GB/month free)
+
+- **No log retention**: Log groups have `retention_in_days = 0` (logs never expire, costs money)
+- **Sensitive data in logs**: Lambda environment variables with secrets may be logged
+- **No encryption**: Log groups not encrypted at rest
+- **No log filtering**: No filters to prevent sensitive data from being logged
+- **Public log access**: If IAM policies allow, logs could be publicly accessible
+
+### 9. Missing Security Features (All FREE)
+
+- **CloudTrail disabled**: AWS CloudTrail not enabled (free for management events)
+- **VPC Flow Logs disabled**: VPC Flow Logs not enabled (10GB/month free)
+- **No monitoring alarms**: No CloudWatch alarms configured (10 alarms free)
+- **No log analysis**: No automated analysis of security logs
+
+### 10. General Security Issues
 
 - **No monitoring**: No CloudWatch alarms or logging
 - **No compliance controls**: No guardrails or policy enforcement
@@ -90,6 +132,30 @@ This repository serves as an educational example of **what NOT to do** when depl
 10. **Identity Theft**: Exposed SSNs and PII could be used for identity theft
 11. **Account Takeover**: Stolen API keys and credentials could lead to full account compromise
 12. **PHI Exposure**: If instances 3-4 are compromised, attackers can access all PHI buckets via IAM role
+13. **Full Admin Access**: IAM users with AdministratorAccess can perform any action in the AWS account
+14. **API Abuse**: Unauthenticated API Gateway allows unlimited anonymous requests
+15. **Lambda Credential Theft**: Secrets in Lambda environment variables can be extracted via code injection or log exposure
+16. **No Audit Trail**: Missing CloudTrail means no record of who did what and when
+17. **Network Blindness**: No VPC Flow Logs means no visibility into network traffic patterns
+
+## Cost Information
+
+**All resources in this deployment are designed to use AWS Free Tier or have no cost:**
+
+- **EC2 Instances**: Stopped by default (no compute cost, only EBS storage - 30GB free/month)
+- **S3 Buckets**: 5GB storage, 20,000 GET requests, 2,000 PUT requests free/month
+- **Lambda**: 1 million requests, 400,000 GB-seconds free/month
+- **API Gateway**: 1 million API calls free/month
+- **CloudWatch Logs**: 5GB ingestion, 5GB storage free/month
+- **VPC, Security Groups, IAM**: Always free
+- **CloudTrail**: Management events free (data events cost extra)
+- **VPC Flow Logs**: 10GB free/month
+
+**Note**: While most resources are free, be aware that:
+- S3 storage beyond 5GB will incur costs
+- Lambda execution time beyond free tier will incur costs
+- API Gateway requests beyond 1M/month will incur costs
+- CloudWatch Logs beyond 5GB will incur costs
 
 ## How to Use This (For Educational Purposes Only)
 
@@ -100,6 +166,8 @@ This repository serves as an educational example of **what NOT to do** when depl
 5. **Never commit real credentials** to this repository
 
 ## Deployment
+
+### Local Deployment
 
 ```bash
 # Initialize Terraform
@@ -114,6 +182,21 @@ terraform apply
 # Destroy immediately after review
 terraform destroy
 ```
+
+### Terraform Cloud Deployment
+
+For Terraform Cloud setup, see **[TERRAFORM_CLOUD.md](./TERRAFORM_CLOUD.md)** for detailed configuration instructions.
+
+**Quick Setup:**
+1. Create a workspace in Terraform Cloud connected to this repository
+2. Configure AWS credentials as environment variables:
+   - `AWS_ACCESS_KEY_ID`
+   - `AWS_SECRET_ACCESS_KEY` (mark as sensitive)
+3. Optionally set Terraform variables:
+   - `aws_region` (default: `us-east-1`)
+   - `instance_type` (default: `t2.micro`)
+4. Queue a plan to verify configuration
+5. Review and apply (only in sandbox environment)
 
 ## Proper Security Practices (What You SHOULD Do)
 
@@ -163,6 +246,46 @@ terraform destroy
 - ✅ Regularly audit IAM permissions
 - ✅ Use IAM Access Analyzer to identify over-permissive policies
 - ✅ Implement just-in-time access for sensitive resources
+- ✅ **Never attach AdministratorAccess to IAM users**
+- ✅ Rotate access keys regularly (every 90 days)
+- ✅ Use IAM roles instead of access keys when possible
+- ✅ Enable MFA for all IAM users, especially those with admin access
+
+### Lambda Functions
+- ✅ Use AWS Secrets Manager or Parameter Store for secrets (not environment variables)
+- ✅ Use least-privilege IAM roles
+- ✅ Configure VPC for Lambda if accessing private resources
+- ✅ Set up dead letter queues for failed invocations
+- ✅ Set reserved concurrency limits
+- ✅ Enable X-Ray tracing for debugging
+- ✅ Use environment variable encryption (KMS)
+- ✅ Never log sensitive data
+
+### API Gateway
+- ✅ Always require authentication (IAM, Cognito, API keys, or custom authorizers)
+- ✅ Attach WAF to protect against common attacks
+- ✅ Configure rate limiting and throttling
+- ✅ Implement request validation
+- ✅ Configure CORS properly
+- ✅ Use API keys for tracking and basic access control
+- ✅ Enable CloudWatch Logs with proper retention
+- ✅ Use HTTPS only (TLS 1.2+)
+
+### CloudWatch Logs
+- ✅ Set appropriate retention periods (don't keep logs forever)
+- ✅ Enable log encryption
+- ✅ Use log filters to prevent sensitive data from being logged
+- ✅ Implement log aggregation and analysis
+- ✅ Set up CloudWatch alarms for suspicious activity
+- ✅ Use separate log groups for different applications
+
+### Monitoring and Logging
+- ✅ Enable CloudTrail for all regions (free for management events)
+- ✅ Enable VPC Flow Logs (10GB/month free)
+- ✅ Set up CloudWatch alarms for security events
+- ✅ Configure S3 access logging
+- ✅ Enable AWS Config for compliance monitoring
+- ✅ Use AWS Security Hub for centralized security findings
 
 ## Disclaimer
 

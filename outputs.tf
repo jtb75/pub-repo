@@ -81,6 +81,58 @@ output "iam_role_info" {
   }
 }
 
+output "iam_users" {
+  description = "IAM users with admin access (BAD: Overly permissive)"
+  value = {
+    for idx, user in aws_iam_user.admin_users : user.name => {
+      arn           = user.arn
+      access_key_id = aws_iam_access_key.admin_keys[idx].id
+      warning       = "User has AdministratorAccess policy attached - VERY BAD!"
+    }
+  }
+}
+
+output "lambda_function" {
+  description = "Lambda function with security issues"
+  value = {
+    function_name = aws_lambda_function.insecure_lambda.function_name
+    arn           = aws_lambda_function.insecure_lambda.arn
+    role_arn      = aws_iam_role.lambda_role.arn
+    warning       = "Lambda has secrets in environment variables and overly permissive IAM role"
+  }
+}
+
+output "api_gateway" {
+  description = "API Gateway with no authentication"
+  value = {
+    api_id      = aws_api_gateway_rest_api.insecure_api.id
+    api_url     = "https://${aws_api_gateway_rest_api.insecure_api.id}.execute-api.${var.aws_region}.amazonaws.com/${aws_api_gateway_deployment.insecure_api_deployment.stage_name}"
+    stage_name  = aws_api_gateway_deployment.insecure_api_deployment.stage_name
+    warning     = "API Gateway has NO authentication - anyone can call it!"
+  }
+}
+
+output "cloudwatch_logs" {
+  description = "CloudWatch Log Groups (no encryption, no retention)"
+  value = {
+    lambda_log_group = aws_cloudwatch_log_group.insecure_logs.name
+    api_log_group    = aws_cloudwatch_log_group.api_gateway_logs.name
+    warning          = "Log groups have no retention policy and may contain sensitive data"
+  }
+}
+
+output "missing_security_features" {
+  description = "Security features that are NOT enabled (anti-patterns)"
+  value = {
+    cloudtrail_enabled = "NO - CloudTrail should be enabled for audit logging"
+    vpc_flow_logs      = "NO - VPC Flow Logs should be enabled for network monitoring"
+    mfa_required       = "NO - MFA should be required for admin users"
+    key_rotation       = "NO - Access keys should be rotated regularly"
+    waf_enabled       = "NO - WAF should be attached to API Gateway"
+    rate_limiting      = "NO - API Gateway should have rate limiting"
+  }
+}
+
 output "warning" {
   description = "SECURITY WARNING"
   value       = "⚠️  THIS DEPLOYMENT CONTAINS NUMEROUS SECURITY VULNERABILITIES. DO NOT USE IN PRODUCTION!"

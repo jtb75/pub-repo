@@ -26,3 +26,6 @@ terraform.rc
 # Ignore lock files (optional, but recommended for teams)
 .terraform.lock.hcl
 
+# Lambda deployment packages
+lambda_function_*.zip
+
