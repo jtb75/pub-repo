@@ -696,14 +696,15 @@ resource "aws_lambda_function" "insecure_lambda" {
   source_code_hash = data.archive_file.lambda_zip.output_base64sha256
 
   # BAD: Secrets stored in plain text environment variables
+  # Note: AWS_ACCESS_KEY and AWS_SECRET_KEY are reserved by Lambda, using alternative names
   environment {
     variables = {
-      DATABASE_PASSWORD = "SuperSecretPassword123!"
-      API_KEY           = "FAKE_sk_live_FAKE_API_KEY_123456789"
-      AWS_ACCESS_KEY    = "AKIAIOSFODNN7EXAMPLE"
-      AWS_SECRET_KEY    = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-      JWT_SECRET        = "FAKE_JWT_SECRET_KEY_DO_NOT_USE"
-      STRIPE_KEY        = "FAKE_sk_test_FAKE_STRIPE_KEY"
+      DATABASE_PASSWORD   = "SuperSecretPassword123!"
+      API_KEY             = "FAKE_sk_live_FAKE_API_KEY_123456789"
+      FAKE_AWS_ACCESS_KEY = "AKIAIOSFODNN7EXAMPLE"
+      FAKE_AWS_SECRET_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+      JWT_SECRET          = "FAKE_JWT_SECRET_KEY_DO_NOT_USE"
+      STRIPE_KEY          = "FAKE_sk_test_FAKE_STRIPE_KEY"
     }
   }
 
