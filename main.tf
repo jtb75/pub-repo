@@ -1250,7 +1250,7 @@ resource "aws_iam_role_policy" "bedrock_flow_policy" {
     Version = "2012-10-17"
     Statement = [
       {
-        # Required: InvokeModel permission with proper foundation model ARN format
+        # Required: InvokeModel permission with proper ARN formats
         Sid    = "InvokeModel"
         Effect = "Allow"
         Action = [
@@ -1259,7 +1259,10 @@ resource "aws_iam_role_policy" "bedrock_flow_policy" {
         ]
         Resource = [
           "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.claude-3-haiku-20240307-v1:0",
-          "arn:aws:bedrock:${var.aws_region}::foundation-model/*"  # BAD: Wildcard fallback
+          "arn:aws:bedrock:${var.aws_region}::foundation-model/*",
+          "arn:aws:bedrock:*::foundation-model/*",  # BAD: All regions
+          "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:inference-profile/*",  # Cross-region inference profiles
+          "arn:aws:bedrock:us:${data.aws_caller_identity.current.account_id}:inference-profile/*"  # US inference profiles
         ]
       },
       {
