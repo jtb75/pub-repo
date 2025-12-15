@@ -1762,9 +1762,9 @@ resource "aws_s3_bucket_policy" "bedrock_model_output_policy" {
 # BEDROCK KNOWLEDGE BASE - Security Anti-Patterns (Insecure RAG)
 # ============================================================================
 
-# Get embedding model ARN
-data "aws_bedrock_foundation_model" "embedding" {
-  model_id = "amazon.titan-embed-text-v1:0"
+# Embedding model ARN (constructed directly to avoid data source issues)
+locals {
+  embedding_model_arn = "arn:aws:bedrock:${var.aws_region}::foundation-model/amazon.titan-embed-text-v2:0"
 }
 
 # BAD: S3 bucket for knowledge base data source with sensitive documents
@@ -2134,7 +2134,7 @@ resource "aws_bedrockagent_knowledge_base" "insecure_kb" {
   knowledge_base_configuration {
     type = "VECTOR"
     vector_knowledge_base_configuration {
-      embedding_model_arn = data.aws_bedrock_foundation_model.embedding.model_arn
+      embedding_model_arn = local.embedding_model_arn
     }
   }
 
