@@ -1384,7 +1384,7 @@ resource "aws_bedrockagent_flow" "insecure_flow" {
         prompt {
           source_configuration {
             inline {
-              model_id      = "amazon.titan-text-express-v1"
+              model_id      = "anthropic.claude-3-haiku-20240307-v1:0"
               template_type = "TEXT"
 
               # BAD: Permissive inference settings
