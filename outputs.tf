@@ -14,8 +14,13 @@ output "internet_gateway_id" {
 }
 
 output "security_group_id" {
-  description = "Wide-open security group ID"
+  description = "Wide-open security group ID (used by instances 1-3)"
   value       = aws_security_group.wide_open.id
+}
+
+output "restricted_security_group_id" {
+  description = "Restricted security group ID (used by instances 4-5 - for drift demo)"
+  value       = aws_security_group.restricted.id
 }
 
 output "ec2_instances" {
@@ -29,6 +34,7 @@ output "ec2_instances" {
       contains_sensitive_data = idx < 3 ? "YES - Contains fake credit cards, SSNs, PII, and secrets" : "No"
       has_iam_role            = idx >= 3 ? "YES - Has IAM role with S3 access to PHI buckets" : "No"
       iam_role_name           = idx >= 3 ? aws_iam_role.phi_access_role.name : null
+      security_group          = idx >= 3 ? "restricted (SSH only from 10.0.0.0/8) - drift demo target" : "wide-open (0.0.0.0/0 all ports) - BAD"
     }
   }
 }

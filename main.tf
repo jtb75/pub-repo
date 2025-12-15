@@ -111,6 +111,36 @@ resource "aws_security_group" "wide_open" {
   }
 }
 
+# Restrictive Security Group - SSH only from corporate network (GOOD practice)
+# Used on instances 4 and 5 to demonstrate config drift when someone opens it up in console
+resource "aws_security_group" "restricted" {
+  name        = "restricted-sg-${random_string.suffix.result}"
+  description = "Restrictive security group - SSH only from corporate network"
+  vpc_id      = aws_vpc.main.id
+
+  # Allow SSH only from corporate network
+  ingress {
+    description = "SSH from corporate network"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/8"] # Corporate network CIDR
+  }
+
+  # Allow outbound traffic (needed for package updates, etc.)
+  egress {
+    description = "Allow all outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "restricted-sg-${random_string.suffix.result}"
+  }
+}
+
 # Get latest Amazon Linux 2 AMI
 data "aws_ami" "amazon_linux" {
   most_recent = true
@@ -320,7 +350,8 @@ resource "aws_instance" "insecure_instances" {
   ami                         = data.aws_ami.amazon_linux.id
   instance_type               = var.instance_type
   subnet_id                   = aws_subnet.public.id
-  vpc_security_group_ids      = [aws_security_group.wide_open.id]
+  # Instances 0-2: wide open (BAD), Instances 3-4: restricted (GOOD - for drift demo)
+  vpc_security_group_ids      = [count.index >= 3 ? aws_security_group.restricted.id : aws_security_group.wide_open.id]
   associate_public_ip_address = true
 
   # BAD: Attach IAM role with overly permissive S3 access to instances 3 and 4
