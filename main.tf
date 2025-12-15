@@ -1250,13 +1250,28 @@ resource "aws_iam_role_policy" "bedrock_flow_policy" {
     Version = "2012-10-17"
     Statement = [
       {
-        # BAD: Wildcard access to all Bedrock operations
+        # Required: InvokeModel permission with proper foundation model ARN format
+        Sid    = "InvokeModel"
+        Effect = "Allow"
+        Action = [
+          "bedrock:InvokeModel",
+          "bedrock:InvokeModelWithResponseStream"
+        ]
+        Resource = [
+          "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.claude-3-haiku-20240307-v1:0",
+          "arn:aws:bedrock:${var.aws_region}::foundation-model/*"  # BAD: Wildcard fallback
+        ]
+      },
+      {
+        # BAD: Wildcard access to other Bedrock operations
+        Sid      = "BedrockWildcard"
         Effect   = "Allow"
         Action   = "bedrock:*"
         Resource = "*"
       },
       {
         # BAD: Full S3 access including delete
+        Sid    = "S3Access"
         Effect = "Allow"
         Action = [
           "s3:GetObject",
@@ -1268,20 +1283,23 @@ resource "aws_iam_role_policy" "bedrock_flow_policy" {
       },
       {
         # BAD: Can invoke any Lambda function
+        Sid      = "LambdaAccess"
         Effect   = "Allow"
         Action   = "lambda:InvokeFunction"
         Resource = "*"
       },
       {
         # BAD: Full CloudWatch Logs access
+        Sid      = "LogsAccess"
         Effect   = "Allow"
         Action   = "logs:*"
         Resource = "*"
       },
       {
         # BAD: Can access secrets (potential credential exposure)
-        Effect   = "Allow"
-        Action   = [
+        Sid    = "SecretsAccess"
+        Effect = "Allow"
+        Action = [
           "secretsmanager:GetSecretValue",
           "ssm:GetParameter"
         ]
