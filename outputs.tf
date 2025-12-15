@@ -169,21 +169,19 @@ output "bedrock_flow" {
     flow_status    = aws_bedrockagent_flow.insecure_flow.status
     flow_version   = aws_bedrockagent_flow.insecure_flow.version
     role_arn       = aws_iam_role.bedrock_flow_role.arn
-    logs_to_bucket = aws_s3_bucket.bedrock_training_data.id
     nodes = [
       "FlowInputNode - Accepts any input without validation",
       "UnsafePrompt - Prompt with no safety guidelines, encourages bypassing restrictions",
-      "LogToS3 - Logs all prompts/responses (including PII) to unencrypted bucket",
       "FlowOutputNode - Returns output without filtering"
     ]
     warnings = [
       "No guardrails configured - flow can process harmful content",
       "No input validation - vulnerable to prompt injection",
-      "Logs sensitive data to unencrypted S3 bucket",
       "Overly permissive IAM role with wildcard permissions",
       "No encryption at rest for flow data",
       "Uses DRAFT version directly - no immutable versioning",
       "Prompt explicitly discourages safety refusals",
+      "High temperature (1.0) increases output unpredictability",
       "Can access secrets via IAM role (secretsmanager, ssm)"
     ]
   }

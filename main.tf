@@ -1303,7 +1303,7 @@ resource "aws_bedrockagent_flow" "insecure_flow" {
   definition {
     # Connection: Input -> Prompt (no validation in between)
     connection {
-      name   = "InputToPromptDirect"
+      name   = "InputToPrompt"
       source = "FlowInputNode"
       target = "UnsafePrompt"
       type   = "Data"
@@ -1316,31 +1316,16 @@ resource "aws_bedrockagent_flow" "insecure_flow" {
       }
     }
 
-    # Connection: Prompt -> S3 Storage (logs everything including PII)
+    # Connection: Prompt -> Output (no filtering)
     connection {
-      name   = "PromptToStorage"
+      name   = "PromptToOutput"
       source = "UnsafePrompt"
-      target = "LogToS3"
-      type   = "Data"
-
-      configuration {
-        data {
-          source_output = "modelCompletion"
-          target_input  = "content"
-        }
-      }
-    }
-
-    # Connection: S3 Storage -> Output
-    connection {
-      name   = "StorageToOutput"
-      source = "LogToS3"
       target = "FlowOutputNode"
       type   = "Data"
 
       configuration {
         data {
-          source_output = "s3Uri"
+          source_output = "modelCompletion"
           target_input  = "document"
         }
       }
@@ -1376,9 +1361,9 @@ resource "aws_bedrockagent_flow" "insecure_flow" {
               # BAD: Permissive inference settings
               inference_configuration {
                 text {
-                  max_tokens     = 4096
-                  temperature    = 1.0  # BAD: High temperature increases unpredictability
-                  top_p          = 1.0  # BAD: No nucleus sampling restriction
+                  max_tokens  = 4096
+                  temperature = 1.0  # BAD: High temperature increases unpredictability
+                  top_p       = 1.0  # BAD: No nucleus sampling restriction
                 }
               }
 
@@ -1417,34 +1402,7 @@ PROMPT
       }
     }
 
-    # BAD: S3 Storage node logs all prompts/responses (including PII) to unencrypted bucket
-    node {
-      name = "LogToS3"
-      type = "Storage"
-
-      configuration {
-        storage {
-          service_configuration {
-            s3 {
-              bucket_name = aws_s3_bucket.bedrock_training_data.id
-            }
-          }
-        }
-      }
-
-      input {
-        expression = "$.data"
-        name       = "content"
-        type       = "String"
-      }
-
-      output {
-        name = "s3Uri"
-        type = "String"
-      }
-    }
-
-    # Output Node
+    # Output Node - returns response without filtering
     node {
       name = "FlowOutputNode"
       type = "Output"
