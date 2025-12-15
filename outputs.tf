@@ -227,6 +227,33 @@ output "bedrock_missing_security_features" {
   }
 }
 
+output "bedrock_knowledge_base" {
+  description = "Bedrock Knowledge Base with security anti-patterns (insecure RAG)"
+  value = {
+    kb_id             = aws_bedrockagent_knowledge_base.insecure_kb.id
+    kb_name           = aws_bedrockagent_knowledge_base.insecure_kb.name
+    kb_arn            = aws_bedrockagent_knowledge_base.insecure_kb.arn
+    role_arn          = aws_iam_role.kb_role.arn
+    datasource_bucket = aws_s3_bucket.kb_data_source.id
+    opensearch_collection = aws_opensearchserverless_collection.kb_collection.name
+    opensearch_endpoint   = aws_opensearchserverless_collection.kb_collection.collection_endpoint
+    sensitive_documents = [
+      "documents/employee_handbook.txt - Contains fake SSNs, salaries, credentials",
+      "documents/customer_database_guide.txt - Contains fake credit cards, API keys",
+      "documents/system_architecture.txt - Contains fake infrastructure secrets"
+    ]
+    warnings = [
+      "Knowledge base contains PII that can be retrieved via RAG queries",
+      "OpenSearch Serverless collection is publicly accessible",
+      "S3 data source bucket has public access enabled",
+      "IAM role has wildcard permissions on S3, Bedrock, and OpenSearch",
+      "No encryption with customer-managed keys",
+      "No data filtering or PII redaction configured",
+      "Sensitive credentials embedded in knowledge base documents"
+    ]
+  }
+}
+
 output "warning" {
   description = "SECURITY WARNING"
   value       = "⚠️  THIS DEPLOYMENT CONTAINS NUMEROUS SECURITY VULNERABILITIES. DO NOT USE IN PRODUCTION!"
