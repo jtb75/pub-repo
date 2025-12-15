@@ -1230,7 +1230,15 @@ resource "aws_iam_role" "bedrock_flow_role" {
         Principal = {
           Service = "bedrock.amazonaws.com"
         }
-        # BAD: No condition keys to restrict which flows can assume this role
+        Condition = {
+          StringEquals = {
+            "aws:SourceAccount" = data.aws_caller_identity.current.account_id
+          }
+          ArnLike = {
+            "aws:SourceArn" = "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:flow/*"
+            # BAD: Wildcard allows ANY flow to assume this role
+          }
+        }
       }
     ]
   })
