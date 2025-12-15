@@ -160,6 +160,35 @@ output "bedrock_agent" {
   }
 }
 
+output "bedrock_flow" {
+  description = "Bedrock Flow with security anti-patterns"
+  value = {
+    flow_id        = aws_bedrockagent_flow.insecure_flow.id
+    flow_name      = aws_bedrockagent_flow.insecure_flow.name
+    flow_arn       = aws_bedrockagent_flow.insecure_flow.arn
+    flow_status    = aws_bedrockagent_flow.insecure_flow.status
+    flow_version   = aws_bedrockagent_flow.insecure_flow.version
+    role_arn       = aws_iam_role.bedrock_flow_role.arn
+    logs_to_bucket = aws_s3_bucket.bedrock_training_data.id
+    nodes = [
+      "FlowInputNode - Accepts any input without validation",
+      "UnsafePrompt - Prompt with no safety guidelines, encourages bypassing restrictions",
+      "LogToS3 - Logs all prompts/responses (including PII) to unencrypted bucket",
+      "FlowOutputNode - Returns output without filtering"
+    ]
+    warnings = [
+      "No guardrails configured - flow can process harmful content",
+      "No input validation - vulnerable to prompt injection",
+      "Logs sensitive data to unencrypted S3 bucket",
+      "Overly permissive IAM role with wildcard permissions",
+      "No encryption at rest for flow data",
+      "Uses DRAFT version directly - no immutable versioning",
+      "Prompt explicitly discourages safety refusals",
+      "Can access secrets via IAM role (secretsmanager, ssm)"
+    ]
+  }
+}
+
 output "bedrock_training_pipeline" {
   description = "Bedrock training data pipeline with security anti-patterns (infrastructure only - no actual training)"
   value = {
@@ -170,12 +199,16 @@ output "bedrock_training_pipeline" {
     training_role_arn    = aws_iam_role.bedrock_training_role.arn
     training_data_files = [
       "training-data/customer_interactions.jsonl - Contains fake PII (SSNs, credit cards, emails)",
-      "training-data/internal_procedures.jsonl - Contains fake internal system info and credentials"
+      "training-data/internal_procedures.jsonl - Contains fake internal system info and credentials",
+      "training-data/ssn_records.jsonl - Contains fake SSN records with linked PII",
+      "training-data/payment_records.jsonl - Contains fake PCI credit card data with CVVs"
     ]
     warnings = [
       "Training data bucket has no encryption",
       "Training data contains PII that would be learned by the model",
       "Training data contains internal system information and credentials",
+      "Training data contains full SSNs linked to personal information",
+      "Training data contains full credit card numbers with CVVs (PCI-DSS violation)",
       "Model output bucket allows deletion by any principal in account",
       "Training IAM role has wildcard permissions on all S3 and Bedrock resources",
       "No data classification or governance controls"
