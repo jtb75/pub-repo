@@ -1764,7 +1764,7 @@ resource "aws_s3_bucket_policy" "bedrock_model_output_policy" {
 
 # Get embedding model ARN
 data "aws_bedrock_foundation_model" "embedding" {
-  model_id = "amazon.titan-embed-text-v1"
+  model_id = "amazon.titan-embed-text-v1:0"
 }
 
 # BAD: S3 bucket for knowledge base data source with sensitive documents
