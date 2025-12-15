@@ -133,6 +133,63 @@ output "missing_security_features" {
   }
 }
 
+output "bedrock_agent" {
+  description = "Bedrock Agent with security anti-patterns"
+  value = {
+    agent_id    = aws_bedrockagent_agent.insecure_agent.agent_id
+    agent_name  = aws_bedrockagent_agent.insecure_agent.agent_name
+    agent_arn   = aws_bedrockagent_agent.insecure_agent.agent_arn
+    alias_id    = aws_bedrockagent_agent_alias.insecure_agent_alias.agent_alias_id
+    alias_name  = aws_bedrockagent_agent_alias.insecure_agent_alias.agent_alias_name
+    model       = "anthropic.claude-3-haiku-20240307-v1:0"
+    role_arn    = aws_iam_role.bedrock_agent_role.arn
+    action_lambda = aws_lambda_function.bedrock_action_lambda.function_name
+    warnings = [
+      "No guardrails configured - agent can generate harmful content",
+      "Overly permissive IAM role with wildcard permissions",
+      "Agent instructions encourage unsafe behavior",
+      "Action group Lambda has secrets in environment variables",
+      "No input/output validation or filtering"
+    ]
+  }
+}
+
+output "bedrock_training_pipeline" {
+  description = "Bedrock training data pipeline with security anti-patterns (infrastructure only - no actual training)"
+  value = {
+    training_data_bucket = aws_s3_bucket.bedrock_training_data.id
+    training_data_arn    = aws_s3_bucket.bedrock_training_data.arn
+    model_output_bucket  = aws_s3_bucket.bedrock_model_output.id
+    model_output_arn     = aws_s3_bucket.bedrock_model_output.arn
+    training_role_arn    = aws_iam_role.bedrock_training_role.arn
+    training_data_files = [
+      "training-data/customer_interactions.jsonl - Contains fake PII (SSNs, credit cards, emails)",
+      "training-data/internal_procedures.jsonl - Contains fake internal system info and credentials"
+    ]
+    warnings = [
+      "Training data bucket has no encryption",
+      "Training data contains PII that would be learned by the model",
+      "Training data contains internal system information and credentials",
+      "Model output bucket allows deletion by any principal in account",
+      "Training IAM role has wildcard permissions on all S3 and Bedrock resources",
+      "No data classification or governance controls"
+    ]
+  }
+}
+
+output "bedrock_missing_security_features" {
+  description = "Security features NOT enabled for Bedrock resources (anti-patterns)"
+  value = {
+    guardrails           = "NO - Bedrock Guardrails should filter harmful content"
+    model_invocation_logging = "NO - Should log all model invocations for audit"
+    vpc_endpoint         = "NO - Traffic goes over public internet instead of VPC"
+    kms_encryption       = "NO - Training data and model artifacts should be encrypted"
+    data_classification  = "NO - Training data should be classified and sanitized"
+    pii_detection        = "NO - Should detect and redact PII before training"
+    prompt_injection_protection = "NO - Agent vulnerable to prompt injection attacks"
+  }
+}
+
 output "warning" {
   description = "SECURITY WARNING"
   value       = "⚠️  THIS DEPLOYMENT CONTAINS NUMEROUS SECURITY VULNERABILITIES. DO NOT USE IN PRODUCTION!"
