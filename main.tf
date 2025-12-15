@@ -1475,6 +1475,20 @@ PROMPT
   # BAD: Prompt injection vulnerable
 }
 
+# Prepare the flow for execution (no native prepare_flow argument available yet)
+resource "terraform_data" "prepare_flow" {
+  triggers_replace = [
+    aws_bedrockagent_flow.insecure_flow.id,
+    aws_bedrockagent_flow.insecure_flow.updated_at
+  ]
+
+  provisioner "local-exec" {
+    command = "aws bedrock-agent prepare-flow --flow-identifier ${aws_bedrockagent_flow.insecure_flow.id} --region ${var.aws_region}"
+  }
+
+  depends_on = [aws_bedrockagent_flow.insecure_flow]
+}
+
 # NOTE: aws_bedrockagent_flow_alias resource not yet available in provider
 # BAD: Flow is deployed without versioning - DRAFT version used directly
 # BAD: No immutable version pinning means changes propagate immediately
