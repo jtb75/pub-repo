@@ -33,6 +33,7 @@ output "ec2_instances" {
       state                   = "stopped"
       contains_sensitive_data = idx < 3 ? "YES - Contains fake credit cards, SSNs, PII, and secrets" : "No"
       has_iam_role            = idx >= 3 ? "YES - Has IAM role with S3 access to PHI buckets" : "No"
+      has_mcp_package         = idx >= 3 ? "YES - Python MCP package (pkg:python/mcp) installed" : "No"
       iam_role_name           = idx >= 3 ? aws_iam_role.phi_access_role.name : null
       security_group          = idx >= 3 ? "restricted (SSH only from 10.0.0.0/8) - drift demo target" : "wide-open (0.0.0.0/0 all ports) - BAD"
     }

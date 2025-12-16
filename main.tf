@@ -272,7 +272,18 @@ EOF
 #!/bin/bash
 # This instance is intentionally insecure
 echo "Instance is running with IMDSv1 enabled"
+
+# BAD: Install Python MCP package with pip as root
+yum update -y
+yum install -y python3 python3-pip
+pip3 install mcp
+
+# BAD: Store MCP installation info in world-readable location
+echo "MCP Python package installed: $(pip3 show mcp | grep Version)" > /tmp/mcp_info.txt
+chmod 644 /tmp/mcp_info.txt
+
 # BAD: No secrets management, might log sensitive data
+logger "MCP package installed on instance with S3 access to PHI buckets"
 EOF
 }
 
