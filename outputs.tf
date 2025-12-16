@@ -109,6 +109,28 @@ output "lambda_function" {
   }
 }
 
+output "agent_invoker_lambda" {
+  description = "Lambda that invokes Bedrock Agent (publicly accessible)"
+  value = {
+    function_name = aws_lambda_function.agent_invoker.function_name
+    function_url  = aws_lambda_function_url.agent_invoker_url.function_url
+    arn           = aws_lambda_function.agent_invoker.arn
+    role_arn      = aws_iam_role.agent_invoker_role.arn
+    agent_id      = aws_bedrockagent_agent.insecure_agent.agent_id
+    agent_alias   = aws_bedrockagent_agent_alias.insecure_agent_alias.agent_alias_id
+    usage_example = "curl -X POST <function_url> -H 'Content-Type: application/json' -d '{\"input\": \"Hello\", \"session_id\": \"test\"}'"
+    warnings = [
+      "Lambda function URL is PUBLIC - no authentication",
+      "No input validation - vulnerable to prompt injection",
+      "User-controlled session_id - session hijacking possible",
+      "Debug logging enabled - sensitive data in CloudWatch",
+      "Overly permissive IAM role (bedrock:*)",
+      "Open CORS policy (Access-Control-Allow-Origin: *)",
+      "Exposes agent_id in error responses"
+    ]
+  }
+}
+
 output "api_gateway" {
   description = "API Gateway with no authentication"
   value = {

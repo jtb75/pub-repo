@@ -1225,6 +1225,215 @@ resource "aws_bedrockagent_agent_alias" "insecure_agent_alias" {
 }
 
 # ============================================================================
+# LAMBDA TO INVOKE BEDROCK AGENT - Security Anti-Patterns
+# ============================================================================
+
+# Lambda code for agent invoker
+locals {
+  agent_invoker_code = <<-PYTHON
+import json
+import boto3
+import os
+import logging
+
+# BAD: Debug logging enabled - may log sensitive data
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger()
+
+# Initialize client
+bedrock_agent = boto3.client('bedrock-agent-runtime')
+
+def handler(event, context):
+    """
+    INSECURE Agent Invoker - Security Anti-Patterns Demo
+
+    Anti-patterns:
+    - No input validation or sanitization
+    - No rate limiting
+    - Logs all input/output (data leak)
+    - No authentication check
+    - Session ID from user input (session hijacking)
+    """
+
+    # BAD: Log entire event including potentially sensitive data
+    logger.info(f"Received event: {json.dumps(event)}")
+
+    # BAD: No input validation
+    body = json.loads(event.get('body', '{}')) if event.get('body') else event
+    user_input = body.get('input', body.get('message', 'Hello'))
+    session_id = body.get('session_id', 'default-session')  # BAD: User-controlled session
+
+    # BAD: No sanitization of user input - vulnerable to prompt injection
+    logger.info(f"User input: {user_input}")
+    logger.info(f"Session ID: {session_id}")
+
+    agent_id = os.environ.get('AGENT_ID')
+    agent_alias_id = os.environ.get('AGENT_ALIAS_ID')
+
+    try:
+        # Invoke the agent
+        response = bedrock_agent.invoke_agent(
+            agentId=agent_id,
+            agentAliasId=agent_alias_id,
+            sessionId=session_id,
+            inputText=user_input  # BAD: Unsanitized input
+        )
+
+        # Collect response
+        completion = ""
+        for event in response['completion']:
+            if 'chunk' in event:
+                chunk = event['chunk']
+                completion += chunk['bytes'].decode('utf-8')
+
+        # BAD: Log full response (may contain sensitive data)
+        logger.info(f"Agent response: {completion}")
+
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'  # BAD: Open CORS
+            },
+            'body': json.dumps({
+                'response': completion,
+                'session_id': session_id,
+                'agent_id': agent_id  # BAD: Exposing internal IDs
+            })
+        }
+
+    except Exception as e:
+        # BAD: Exposing internal error details
+        logger.error(f"Error invoking agent: {str(e)}")
+        return {
+            'statusCode': 500,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            'body': json.dumps({
+                'error': str(e),  # BAD: Exposing error details
+                'agent_id': agent_id,
+                'agent_alias_id': agent_alias_id
+            })
+        }
+PYTHON
+}
+
+# Create zip for agent invoker lambda
+data "archive_file" "agent_invoker_zip" {
+  type        = "zip"
+  output_path = "${path.module}/agent_invoker.zip"
+
+  source {
+    content  = local.agent_invoker_code
+    filename = "index.py"
+  }
+}
+
+# BAD: IAM role for agent invoker with overly permissive access
+resource "aws_iam_role" "agent_invoker_role" {
+  name = "agent-invoker-overly-permissive-${random_string.suffix.result}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "agent-invoker-role-${random_string.suffix.result}"
+    Environment = "insecure-demo"
+  }
+}
+
+# BAD: Overly permissive policy - allows invoking ANY agent
+resource "aws_iam_role_policy" "agent_invoker_policy" {
+  name = "agent-invoker-full-access-${random_string.suffix.result}"
+  role = aws_iam_role.agent_invoker_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "bedrock:InvokeAgent",
+          "bedrock:InvokeModel",
+          "bedrock:*"  # BAD: Wildcard permissions
+        ]
+        Resource = "*"  # BAD: All resources
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# Agent invoker Lambda function
+resource "aws_lambda_function" "agent_invoker" {
+  filename         = data.archive_file.agent_invoker_zip.output_path
+  function_name    = "agent-invoker-insecure-${random_string.suffix.result}"
+  role             = aws_iam_role.agent_invoker_role.arn
+  handler          = "index.handler"
+  runtime          = "python3.11"
+  timeout          = 60  # BAD: Long timeout allows resource exhaustion
+  source_code_hash = data.archive_file.agent_invoker_zip.output_base64sha256
+
+  # BAD: Sensitive configuration in environment variables
+  environment {
+    variables = {
+      AGENT_ID       = aws_bedrockagent_agent.insecure_agent.agent_id
+      AGENT_ALIAS_ID = aws_bedrockagent_agent_alias.insecure_agent_alias.agent_alias_id
+      LOG_LEVEL      = "DEBUG"  # BAD: Debug logging in production
+    }
+  }
+
+  tags = {
+    Name        = "agent-invoker-insecure-${random_string.suffix.result}"
+    Environment = "insecure-demo"
+    Warning     = "NO-INPUT-VALIDATION"
+  }
+}
+
+# CloudWatch log group for agent invoker (no encryption, no retention)
+resource "aws_cloudwatch_log_group" "agent_invoker_logs" {
+  name              = "/aws/lambda/${aws_lambda_function.agent_invoker.function_name}"
+  retention_in_days = 0  # BAD: Logs never expire
+
+  tags = {
+    Name        = "agent-invoker-logs-${random_string.suffix.result}"
+    Environment = "insecure-demo"
+  }
+}
+
+# Lambda function URL for direct public access (BAD: No auth)
+resource "aws_lambda_function_url" "agent_invoker_url" {
+  function_name      = aws_lambda_function.agent_invoker.function_name
+  authorization_type = "NONE"  # BAD: No authentication required
+
+  cors {
+    allow_origins = ["*"]  # BAD: Allow all origins
+    allow_methods = ["*"]  # BAD: Allow all methods
+    allow_headers = ["*"]  # BAD: Allow all headers
+  }
+}
+
+# ============================================================================
 # BEDROCK FLOW - Security Anti-Patterns
 # ============================================================================
 
