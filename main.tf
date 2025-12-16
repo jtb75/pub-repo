@@ -1754,3 +1754,418 @@ resource "aws_s3_bucket_policy" "bedrock_model_output_policy" {
   })
 }
 
+
+# ============================================================================
+# MCP SERVER ON EC2 - Security Anti-Patterns
+# ============================================================================
+
+# BAD: Security group allows MCP server access from anywhere
+resource "aws_security_group" "mcp_server" {
+  name        = "mcp-server-public-${random_string.suffix.result}"
+  description = "BAD: Allows public access to MCP server"
+  vpc_id      = aws_vpc.main.id
+
+  # BAD: MCP SSE endpoint exposed to entire internet
+  ingress {
+    description = "MCP SSE endpoint - PUBLIC"
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]  # BAD: Open to world
+  }
+
+  # BAD: SSH from anywhere
+  ingress {
+    description = "SSH - PUBLIC"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]  # BAD: Open to world
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "mcp-server-public-${random_string.suffix.result}"
+    Environment = "insecure-demo"
+    Warning     = "PUBLICLY-EXPOSED"
+  }
+}
+
+# BAD: IAM role for MCP server with access to sensitive S3 data
+resource "aws_iam_role" "mcp_server_role" {
+  name = "mcp-server-overly-permissive-${random_string.suffix.result}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "mcp-server-role-${random_string.suffix.result}"
+    Environment = "insecure-demo"
+  }
+}
+
+# BAD: MCP server has full access to training data bucket (contains PII/PCI)
+resource "aws_iam_role_policy" "mcp_server_s3_policy" {
+  name = "mcp-server-s3-access-${random_string.suffix.result}"
+  role = aws_iam_role.mcp_server_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "S3FullAccess"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket",
+          "s3:GetBucketLocation"
+        ]
+        Resource = [
+          aws_s3_bucket.bedrock_training_data.arn,
+          "${aws_s3_bucket.bedrock_training_data.arn}/*",
+          # BAD: Also give access to PHI buckets
+          "arn:aws:s3:::phi-data-bucket-*",
+          "arn:aws:s3:::phi-data-bucket-*/*"
+        ]
+      },
+      {
+        Sid    = "ListAllBuckets"
+        Effect = "Allow"
+        Action = "s3:ListAllMyBuckets"
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# Instance profile for MCP server
+resource "aws_iam_instance_profile" "mcp_server_profile" {
+  name = "mcp-server-profile-${random_string.suffix.result}"
+  role = aws_iam_role.mcp_server_role.name
+}
+
+# MCP Server user-data script
+locals {
+  mcp_server_userdata = <<-USERDATA
+#!/bin/bash
+set -e
+
+# Log everything
+exec > >(tee /var/log/mcp-setup.log) 2>&1
+
+echo "=== Installing MCP Server ==="
+
+# Install dependencies
+yum update -y
+yum install -y python3 python3-pip git
+
+# Install MCP SDK and dependencies
+pip3 install mcp boto3 uvicorn starlette sse-starlette
+
+# Create MCP server directory
+mkdir -p /opt/mcp-server
+cd /opt/mcp-server
+
+# BAD: Create insecure MCP server with S3 access tools
+cat > /opt/mcp-server/server.py << 'MCPSERVER'
+#!/usr/bin/env python3
+"""
+INSECURE MCP SERVER - Security Anti-Patterns Demo
+DO NOT USE IN PRODUCTION
+
+Anti-patterns demonstrated:
+- No authentication
+- Publicly exposed
+- Full S3 bucket access
+- Command execution capabilities
+- Running as root
+"""
+
+import asyncio
+import json
+import os
+import subprocess
+import boto3
+from mcp.server import Server
+from mcp.server.sse import SseServerTransport
+from mcp.types import Tool, TextContent
+from starlette.applications import Starlette
+from starlette.routing import Route
+from starlette.responses import Response
+
+# Initialize MCP server
+server = Server("insecure-mcp-server")
+
+# Initialize S3 client (uses instance role)
+s3_client = boto3.client('s3')
+
+@server.list_tools()
+async def list_tools():
+    """List available tools - all overly permissive"""
+    return [
+        Tool(
+            name="list_s3_buckets",
+            description="List all S3 buckets in the account",
+            inputSchema={"type": "object", "properties": {}}
+        ),
+        Tool(
+            name="list_s3_objects",
+            description="List objects in an S3 bucket",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "bucket": {"type": "string", "description": "Bucket name"},
+                    "prefix": {"type": "string", "description": "Object prefix"}
+                },
+                "required": ["bucket"]
+            }
+        ),
+        Tool(
+            name="read_s3_object",
+            description="Read contents of an S3 object - NO ACCESS CONTROLS",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "bucket": {"type": "string", "description": "Bucket name"},
+                    "key": {"type": "string", "description": "Object key"}
+                },
+                "required": ["bucket", "key"]
+            }
+        ),
+        Tool(
+            name="write_s3_object",
+            description="Write content to S3 - NO VALIDATION",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "bucket": {"type": "string", "description": "Bucket name"},
+                    "key": {"type": "string", "description": "Object key"},
+                    "content": {"type": "string", "description": "Content to write"}
+                },
+                "required": ["bucket", "key", "content"]
+            }
+        ),
+        Tool(
+            name="execute_command",
+            description="Execute shell command - DANGEROUS",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "Shell command to execute"}
+                },
+                "required": ["command"]
+            }
+        ),
+        Tool(
+            name="read_file",
+            description="Read any file on the system - NO PATH RESTRICTIONS",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File path"}
+                },
+                "required": ["path"]
+            }
+        ),
+        Tool(
+            name="get_instance_metadata",
+            description="Get EC2 instance metadata including credentials",
+            inputSchema={"type": "object", "properties": {}}
+        )
+    ]
+
+@server.call_tool()
+async def call_tool(name: str, arguments: dict):
+    """Execute tools - NO AUTHORIZATION CHECKS"""
+    
+    if name == "list_s3_buckets":
+        response = s3_client.list_buckets()
+        buckets = [b['Name'] for b in response['Buckets']]
+        return [TextContent(type="text", text=json.dumps(buckets, indent=2))]
+    
+    elif name == "list_s3_objects":
+        bucket = arguments["bucket"]
+        prefix = arguments.get("prefix", "")
+        response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix)
+        objects = [obj['Key'] for obj in response.get('Contents', [])]
+        return [TextContent(type="text", text=json.dumps(objects, indent=2))]
+    
+    elif name == "read_s3_object":
+        # BAD: No access control, reads any object
+        bucket = arguments["bucket"]
+        key = arguments["key"]
+        response = s3_client.get_object(Bucket=bucket, Key=key)
+        content = response['Body'].read().decode('utf-8')
+        return [TextContent(type="text", text=content)]
+    
+    elif name == "write_s3_object":
+        # BAD: No validation, writes anything
+        bucket = arguments["bucket"]
+        key = arguments["key"]
+        content = arguments["content"]
+        s3_client.put_object(Bucket=bucket, Key=key, Body=content.encode())
+        return [TextContent(type="text", text=f"Written to s3://{bucket}/{key}")]
+    
+    elif name == "execute_command":
+        # BAD: Arbitrary command execution
+        command = arguments["command"]
+        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+        output = f"STDOUT:\n{result.stdout}\n\nSTDERR:\n{result.stderr}\n\nReturn code: {result.returncode}"
+        return [TextContent(type="text", text=output)]
+    
+    elif name == "read_file":
+        # BAD: No path restrictions
+        path = arguments["path"]
+        with open(path, 'r') as f:
+            content = f.read()
+        return [TextContent(type="text", text=content)]
+    
+    elif name == "get_instance_metadata":
+        # BAD: Exposes instance credentials
+        import urllib.request
+        token_url = "http://169.254.169.254/latest/api/token"
+        req = urllib.request.Request(token_url, method='PUT')
+        req.add_header('X-aws-ec2-metadata-token-ttl-seconds', '21600')
+        token = urllib.request.urlopen(req).read().decode()
+        
+        metadata = {}
+        for item in ['instance-id', 'instance-type', 'ami-id', 'local-ipv4', 'public-ipv4']:
+            try:
+                url = f"http://169.254.169.254/latest/meta-data/{item}"
+                req = urllib.request.Request(url)
+                req.add_header('X-aws-ec2-metadata-token', token)
+                metadata[item] = urllib.request.urlopen(req).read().decode()
+            except:
+                pass
+        
+        # BAD: Also get IAM credentials
+        try:
+            url = "http://169.254.169.254/latest/meta-data/iam/security-credentials/"
+            req = urllib.request.Request(url)
+            req.add_header('X-aws-ec2-metadata-token', token)
+            role = urllib.request.urlopen(req).read().decode().strip()
+            
+            url = f"http://169.254.169.254/latest/meta-data/iam/security-credentials/{role}"
+            req = urllib.request.Request(url)
+            req.add_header('X-aws-ec2-metadata-token', token)
+            creds = urllib.request.urlopen(req).read().decode()
+            metadata['iam_credentials'] = json.loads(creds)
+        except Exception as e:
+            metadata['iam_credentials_error'] = str(e)
+        
+        return [TextContent(type="text", text=json.dumps(metadata, indent=2))]
+    
+    return [TextContent(type="text", text=f"Unknown tool: {name}")]
+
+# SSE transport for public access
+transport = SseServerTransport("/messages/")
+
+async def handle_sse(request):
+    async with transport.connect_sse(
+        request.scope, request.receive, request._send
+    ) as streams:
+        await server.run(
+            streams[0], streams[1], server.create_initialization_options()
+        )
+
+async def handle_messages(request):
+    await transport.handle_post_message(request.scope, request.receive, request._send)
+
+async def health_check(request):
+    return Response(
+        content=json.dumps({
+            "status": "running",
+            "server": "insecure-mcp-server",
+            "warning": "NO AUTHENTICATION - DO NOT USE IN PRODUCTION"
+        }),
+        media_type="application/json"
+    )
+
+app = Starlette(
+    routes=[
+        Route("/health", health_check),
+        Route("/sse", handle_sse),
+        Route("/messages/", handle_messages, methods=["POST"]),
+    ]
+)
+
+if __name__ == "__main__":
+    import uvicorn
+    # BAD: Binding to 0.0.0.0 exposes to all interfaces
+    print("WARNING: Starting INSECURE MCP server on 0.0.0.0:8080")
+    print("This server has NO AUTHENTICATION and should NOT be used in production!")
+    uvicorn.run(app, host="0.0.0.0", port=8080)
+MCPSERVER
+
+# Create systemd service
+cat > /etc/systemd/system/mcp-server.service << 'SYSTEMD'
+[Unit]
+Description=Insecure MCP Server (Demo)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/mcp-server
+ExecStart=/usr/bin/python3 /opt/mcp-server/server.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+SYSTEMD
+
+# Start MCP server
+systemctl daemon-reload
+systemctl enable mcp-server
+systemctl start mcp-server
+
+echo "=== MCP Server installed and running on port 8080 ==="
+echo "WARNING: This server is INSECURE and publicly accessible!"
+USERDATA
+}
+
+# MCP Server EC2 Instance
+resource "aws_instance" "mcp_server" {
+  ami                         = data.aws_ami.amazon_linux.id
+  instance_type               = var.instance_type
+  subnet_id                   = aws_subnet.public.id
+  vpc_security_group_ids      = [aws_security_group.mcp_server.id]
+  iam_instance_profile        = aws_iam_instance_profile.mcp_server_profile.name
+  associate_public_ip_address = true  # BAD: Public IP
+
+  user_data = local.mcp_server_userdata
+
+  # BAD: IMDSv1 enabled (allows SSRF attacks)
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "optional"  # BAD: IMDSv1 allowed
+    http_put_response_hop_limit = 2
+  }
+
+  tags = {
+    Name        = "mcp-server-insecure-${random_string.suffix.result}"
+    Environment = "insecure-demo"
+    Warning     = "PUBLICLY-EXPOSED-MCP-SERVER"
+    Purpose     = "MCP Server with S3 access to sensitive data"
+  }
+}

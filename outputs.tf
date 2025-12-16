@@ -227,6 +227,38 @@ output "bedrock_missing_security_features" {
   }
 }
 
+output "mcp_server" {
+  description = "Insecure MCP Server on EC2 with S3 access"
+  value = {
+    instance_id   = aws_instance.mcp_server.id
+    public_ip     = aws_instance.mcp_server.public_ip
+    public_dns    = aws_instance.mcp_server.public_dns
+    mcp_endpoint  = "http://${aws_instance.mcp_server.public_ip}:8080"
+    sse_endpoint  = "http://${aws_instance.mcp_server.public_ip}:8080/sse"
+    health_check  = "http://${aws_instance.mcp_server.public_ip}:8080/health"
+    iam_role      = aws_iam_role.mcp_server_role.name
+    s3_access     = aws_s3_bucket.bedrock_training_data.id
+    tools = [
+      "list_s3_buckets - List all S3 buckets",
+      "list_s3_objects - List objects in bucket",
+      "read_s3_object - Read any S3 object (includes PII/PCI data)",
+      "write_s3_object - Write to S3 without validation",
+      "execute_command - Run arbitrary shell commands",
+      "read_file - Read any file on the system",
+      "get_instance_metadata - Get EC2 metadata including IAM credentials"
+    ]
+    warnings = [
+      "MCP server is publicly exposed on port 8080",
+      "NO AUTHENTICATION required to connect",
+      "Has access to S3 bucket with fake PII/PCI training data",
+      "Allows arbitrary command execution",
+      "Exposes instance IAM credentials via metadata",
+      "IMDSv1 enabled - vulnerable to SSRF",
+      "Running as root"
+    ]
+  }
+}
+
 output "warning" {
   description = "SECURITY WARNING"
   value       = "⚠️  THIS DEPLOYMENT CONTAINS NUMEROUS SECURITY VULNERABILITIES. DO NOT USE IN PRODUCTION!"
