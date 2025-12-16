@@ -1794,6 +1794,15 @@ resource "aws_security_group" "mcp_server" {
     cidr_blocks = ["0.0.0.0/0"]  # BAD: Open to world
   }
 
+  # BAD: Ollama LLM API exposed to entire internet
+  ingress {
+    description = "Ollama LLM API - PUBLIC (NO AUTH)"
+    from_port   = 11434
+    to_port     = 11434
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]  # BAD: Open to world
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -2151,6 +2160,37 @@ systemctl enable mcp-server
 systemctl start mcp-server
 
 echo "=== MCP Server installed and running on port 8080 ==="
+
+# ============================================
+# BAD: Install Ollama - publicly exposed LLM
+# ============================================
+echo "=== Installing Ollama ==="
+
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+
+# BAD: Configure Ollama to listen on all interfaces (0.0.0.0)
+mkdir -p /etc/systemd/system/ollama.service.d
+cat > /etc/systemd/system/ollama.service.d/override.conf << 'OLLAMA_OVERRIDE'
+[Service]
+Environment="OLLAMA_HOST=0.0.0.0:11434"
+Environment="OLLAMA_ORIGINS=*"
+OLLAMA_OVERRIDE
+
+# Reload and start Ollama
+systemctl daemon-reload
+systemctl enable ollama
+systemctl start ollama
+
+# Wait for Ollama to be ready
+sleep 10
+
+# Pull a small model (tinyllama is ~637MB)
+echo "Pulling tinyllama model..."
+ollama pull tinyllama
+
+echo "=== Ollama installed and running on port 11434 ==="
+echo "WARNING: Ollama is publicly accessible with NO AUTHENTICATION!"
 echo "WARNING: This server is INSECURE and publicly accessible!"
 USERDATA
 }

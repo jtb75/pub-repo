@@ -229,7 +229,7 @@ output "bedrock_missing_security_features" {
 }
 
 output "mcp_server" {
-  description = "Insecure MCP Server on EC2 with S3 access"
+  description = "Insecure MCP Server on EC2 with S3 access and Ollama LLM"
   value = {
     instance_id   = aws_instance.mcp_server.id
     public_ip     = aws_instance.mcp_server.public_ip
@@ -237,6 +237,9 @@ output "mcp_server" {
     mcp_endpoint  = "http://${aws_instance.mcp_server.public_ip}:8080"
     sse_endpoint  = "http://${aws_instance.mcp_server.public_ip}:8080/sse"
     health_check  = "http://${aws_instance.mcp_server.public_ip}:8080/health"
+    ollama_endpoint = "http://${aws_instance.mcp_server.public_ip}:11434"
+    ollama_api      = "http://${aws_instance.mcp_server.public_ip}:11434/api/generate"
+    ollama_models   = "http://${aws_instance.mcp_server.public_ip}:11434/api/tags"
     iam_role      = aws_iam_role.mcp_server_role.name
     s3_access     = aws_s3_bucket.bedrock_training_data.id
     tools = [
@@ -248,8 +251,20 @@ output "mcp_server" {
       "read_file - Read any file on the system",
       "get_instance_metadata - Get EC2 metadata including IAM credentials"
     ]
+    ollama = {
+      model    = "tinyllama"
+      port     = 11434
+      warnings = [
+        "Ollama LLM is publicly exposed on port 11434",
+        "NO AUTHENTICATION - anyone can generate text",
+        "OLLAMA_ORIGINS=* allows any origin",
+        "Can be used for prompt injection attacks",
+        "Resource exhaustion via repeated requests"
+      ]
+    }
     warnings = [
       "MCP server is publicly exposed on port 8080",
+      "Ollama LLM is publicly exposed on port 11434",
       "NO AUTHENTICATION required to connect",
       "Has access to S3 bucket with fake PII/PCI training data",
       "Allows arbitrary command execution",
