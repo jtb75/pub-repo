@@ -1077,7 +1077,7 @@ resource "aws_cloudwatch_log_group" "bedrock_action_logs" {
 resource "aws_bedrockagent_agent" "insecure_agent" {
   agent_name              = "insecure-agent-${random_string.suffix.result}"
   agent_resource_role_arn = aws_iam_role.bedrock_agent_role.arn
-  foundation_model        = "anthropic.claude-3-haiku-20240307-v1:0" # Using Haiku for cost efficiency
+  foundation_model        = "us.anthropic.claude-3-haiku-20240307-v1:0" # Using US cross-region inference profile
   idle_session_ttl_in_seconds = 600
 
   # BAD: Overly permissive instructions with no safety guidelines
@@ -1270,11 +1270,12 @@ resource "aws_iam_role_policy" "bedrock_flow_policy" {
           "bedrock:InvokeModelWithResponseStream"
         ]
         Resource = [
-          "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.claude-3-haiku-20240307-v1:0",
           "arn:aws:bedrock:${var.aws_region}::foundation-model/*",
           "arn:aws:bedrock:*::foundation-model/*",  # BAD: All regions
-          "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:inference-profile/*",  # Cross-region inference profiles
-          "arn:aws:bedrock:us:${data.aws_caller_identity.current.account_id}:inference-profile/*"  # US inference profiles
+          "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:inference-profile/*",
+          "arn:aws:bedrock:us:${data.aws_caller_identity.current.account_id}:inference-profile/*",
+          "arn:aws:bedrock:us::foundation-model/*",  # US cross-region models
+          "arn:aws:bedrock:*:*:inference-profile/*"  # BAD: Any inference profile
         ]
       },
       {
@@ -1388,7 +1389,7 @@ resource "aws_bedrockagent_flow" "insecure_flow" {
         prompt {
           source_configuration {
             inline {
-              model_id      = "anthropic.claude-3-haiku-20240307-v1:0"
+              model_id      = "us.anthropic.claude-3-haiku-20240307-v1:0"  # US cross-region inference profile
               template_type = "TEXT"
 
               # BAD: Permissive inference settings
